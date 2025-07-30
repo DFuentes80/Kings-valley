@@ -13,10 +13,8 @@
     "socket.io": "^4.8.1"
   },
   "scripts": {
-    "start": "craco start",
-    "build": "craco build",
-    "test": "craco test",
-    "eject": "react-scripts eject"
+  "start": "node server.js"
+}
   },
   "browserslist": {
     "production": [
