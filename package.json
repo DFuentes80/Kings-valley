@@ -14,7 +14,7 @@
   },
   "scripts": {
   "start": "node server.js"
-}
+  }
   },
   "browserslist": {
     "production": [
