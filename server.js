@@ -1,3 +1,12 @@
+// Add this before any other code
+if (process.env.NODE_ENV === 'production') {
+  app.use((req, res, next) => {
+    if (req.headers['x-forwarded-proto'] !== 'https') {
+      return res.redirect(`https://${req.headers.host}${req.url}`);
+    }
+    next();
+  });
+}
 const express = require('express');
 const app = express();
 const http = require('http').createServer(app);
