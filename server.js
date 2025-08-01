@@ -237,7 +237,7 @@ setInterval(() => {
   });
 }, 30 * 60 * 1000); // Check every 30 minutes
 
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 3001;
 http.listen(PORT, '0.0.0.0', () => {
   console.log(`Server running on port ${PORT}`);
 });
