@@ -237,16 +237,13 @@ setInterval(() => {
   });
 }, 30 * 60 * 1000); // Check every 30 minutes
 
-const PORT = process.env.PORT || 3001;
+const PORT = process.env.PORT || 3000;
+
 http.listen(PORT, '0.0.0.0', () => {
   console.log(`Server running on port ${PORT}`);
-});
-
-// Error handlers
-process.on('uncaughtException', (err) => {
-  console.error('Uncaught Exception:', err);
-});
-
-process.on('unhandledRejection', (err) => {
-  console.error('Unhandled Rejection:', err);
+}).on('error', (err) => {
+  if (err.code === 'EADDRINUSE') {
+    console.log(`Port ${PORT} in use, trying ${PORT+1}...`);
+    http.listen(PORT+1, '0.0.0.0');
+  }
 });
