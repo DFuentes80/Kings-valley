@@ -1,3 +1,4 @@
+require('dotenv').config();
 const express = require('express');
 const app = express();
 const http = require('http').createServer(app);
@@ -7,17 +8,41 @@ const io = require('socket.io')(http, {
       'https://kings-valley-production.up.railway.app',
       'http://localhost:3000'
     ],
-    methods: ['GET', 'POST'],
+    methods: ["GET", "POST"],
+    credentials: true,
     transports: ['websocket', 'polling']
   }
 });
 const path = require('path');
+const fs = require('fs');
 
-// Serve static files
-app.use(express.static(path.join(__dirname, 'public')));
+// Create .gitignore if missing
+if (!fs.existsSync('.gitignore')) {
+  fs.writeFileSync('.gitignore', 
+`node_modules/
+.env
+.DS_Store
+*.log
+`);
+}
 
-// Game state storage
-const rooms = {};
+// HTTPS redirect middleware
+app.use((req, res, next) => {
+  if (req.headers['x-forwarded-proto'] !== 'https' && process.env.NODE_ENV === 'production') {
+    return res.redirect(`https://${req.headers.host}${req.url}`);
+  }
+  next();
+});
+
+// Serve static files with proper caching
+app.use(express.static(path.join(__dirname, 'public'), {
+  maxAge: '1d',
+  setHeaders: (res, path) => {
+    if (path.endsWith('.css')) {
+      res.setHeader('Content-Type', 'text/css');
+    }
+  }
+}));
 
 // Game constants
 const PLAYER_RED = 1;
@@ -27,15 +52,18 @@ const PIECE_BLUE = 2;
 const KING_RED = 3;
 const KING_BLUE = 4;
 const EMPTY = 0;
-const CENTER = [2, 2];
+const CENTER = [2, 2]; // King's Valley position
+
+// Game state storage
+const rooms = {};
 
 function createNewBoard() {
   return [
-    [PIECE_RED, PIECE_RED, KING_RED, PIECE_RED, PIECE_RED],
+    [PIECE_RED, PIECE_RED, KING_RED, PIECE_RED, PIECE_RED],  // Red team (top)
     [EMPTY, EMPTY, EMPTY, EMPTY, EMPTY],
+    [EMPTY, EMPTY, EMPTY, EMPTY, EMPTY],  // Center is King's Valley
     [EMPTY, EMPTY, EMPTY, EMPTY, EMPTY],
-    [EMPTY, EMPTY, EMPTY, EMPTY, EMPTY],
-    [PIECE_BLUE, PIECE_BLUE, KING_BLUE, PIECE_BLUE, PIECE_BLUE]
+    [PIECE_BLUE, PIECE_BLUE, KING_BLUE, PIECE_BLUE, PIECE_BLUE]  // Blue team (bottom)
   ];
 }
 
@@ -109,11 +137,12 @@ io.on('connection', (socket) => {
           winner: null,
           createdAt: Date.now()
         };
+        console.log(`Created new room: ${roomCode}`);
       }
 
       const room = rooms[roomCode];
       if (room.players.length >= 2) {
-        throw new Error('Room is full');
+        throw new Error('Room is full (2 players maximum)');
       }
 
       const playerNumber = room.players.length + 1;
@@ -133,6 +162,7 @@ io.on('connection', (socket) => {
       socket.to(roomCode).emit('playerJoined', { player: playerNumber });
     } catch (error) {
       socket.emit('error', error.message);
+      console.error('Join error:', error);
     }
   });
 
@@ -140,18 +170,22 @@ io.on('connection', (socket) => {
     try {
       const { from, to } = move;
       const roomCode = Array.from(socket.rooms)[1];
-      if (!roomCode || !rooms[roomCode]) throw new Error('Invalid room');
+      if (!roomCode || !rooms[roomCode]) {
+        throw new Error('Invalid room');
+      }
 
       const room = rooms[roomCode];
       const playerIndex = room.players.indexOf(socket.id);
       const currentPlayer = playerIndex + 1;
 
       if (currentPlayer !== room.currentPlayer || room.winner) {
-        throw new Error('Not your turn');
+        throw new Error('Not your turn or game already ended');
       }
 
       const destination = calculateValidMove(room.board, from, to, currentPlayer);
-      if (!destination) throw new Error('Invalid move');
+      if (!destination) {
+        throw new Error('Invalid move');
+      }
 
       const piece = room.board[from[0]][from[1]];
       room.board[from[0]][from[1]] = EMPTY;
@@ -170,10 +204,12 @@ io.on('connection', (socket) => {
       });
     } catch (error) {
       socket.emit('error', error.message);
+      console.error('Move error:', error);
     }
   });
 
   socket.on('disconnect', () => {
+    console.log('User disconnected:', socket.id);
     Object.keys(rooms).forEach(roomCode => {
       const room = rooms[roomCode];
       const index = room.players.indexOf(socket.id);
@@ -182,25 +218,24 @@ io.on('connection', (socket) => {
         io.to(roomCode).emit('playerLeft', { player: index + 1 });
         if (room.players.length === 0) {
           delete rooms[roomCode];
+          console.log(`Room ${roomCode} deleted (empty)`);
         }
       }
     });
   });
 });
 
-// Create .gitignore file content
-const gitignoreContent = `node_modules/
-.env
-.DS_Store
-*.log
-`;
-
-// Create the file if it doesn't exist
-const fs = require('fs');
-if (!fs.existsSync('.gitignore')) {
-  fs.writeFileSync('.gitignore', gitignoreContent);
-  console.log('Created .gitignore file');
-}
+// Clean up old rooms periodically
+setInterval(() => {
+  const now = Date.now();
+  const timeout = 2 * 60 * 60 * 1000; // 2 hours
+  Object.keys(rooms).forEach(roomCode => {
+    if (now - rooms[roomCode].createdAt > timeout && rooms[roomCode].players.length === 0) {
+      delete rooms[roomCode];
+      console.log(`Room ${roomCode} cleaned up (inactive)`);
+    }
+  });
+}, 30 * 60 * 1000); // Check every 30 minutes
 
 const PORT = process.env.PORT || 3000;
 http.listen(PORT, '0.0.0.0', () => {
