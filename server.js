@@ -12,7 +12,10 @@ const app = express();
 const http = require('http').createServer(app);
 const io = require('socket.io')(http, {
   cors: {
-    origin: ["https://kings-valley-production.up.railway.app", "http://localhost:3000"],
+    origin: [
+      `https://${process.env.RAILWAY_STATIC_URL}`,
+      "http://localhost:3000"
+    ],
     methods: ["GET", "POST"],
     transports: ['websocket', 'polling'],
     credentials: true
